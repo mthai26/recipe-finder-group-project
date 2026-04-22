@@ -398,6 +398,7 @@ def render_recipe_card(
     user_id: Optional[int],
     key_prefix: str,
 ) -> None:
+    recipe_id = recipe["id"]
     with st.container(border=True):
         left, right = st.columns([1.0, 2.0])
 
@@ -415,34 +416,68 @@ def render_recipe_card(
 
             if recipe["matched"]:
                 st.success("Ingredient matches: " + ", ".join(recipe["matched"]))
-            else:
-                st.info("No exact ingredient matches yet. You can still view the recipe details below.")
 
+            # --- SUBSTITUTION UI ---
+            with st.expander("🔄 Substitute Ingredients"):
+                sub_col1, sub_col2, sub_col3 = st.columns([2, 2, 1])
+                
+                target = sub_col1.selectbox(
+                    "Replace...", 
+                    options=recipe["ingredients"], 
+                    key=f"target_{key_prefix}_{recipe_id}"
+                )
+                replacement = sub_col2.text_input(
+                    "With...", 
+                    placeholder="e.g. Tofu", 
+                    key=f"rep_{key_prefix}_{recipe_id}"
+                )
+                
+                if sub_col3.button("Swap", key=f"btn_{key_prefix}_{recipe_id}"):
+                    if replacement:
+                        if recipe_id not in st.session_state.substitutions:
+                            st.session_state.substitutions[recipe_id] = {}
+                        st.session_state.substitutions[recipe_id][target] = replacement
+                        st.rerun()
+
+                if recipe_id in st.session_state.substitutions and st.button("Reset Substitutions", key=f"reset_{key_prefix}_{recipe_id}"):
+                    del st.session_state.substitutions[recipe_id]
+                    st.rerun()
+
+            with st.expander("See full ingredients and steps", expanded=True):
+                st.write("**Ingredients**")
+                subs = st.session_state.substitutions.get(recipe_id, {})
+                
+                for ingredient in recipe["ingredients"]:
+                    if ingredient in subs:
+                        # Display the modified ingredient
+                        new_text = apply_substitution(ingredient, subs[ingredient])
+                        st.write(f"- {new_text} ~~*(was {ingredient})*~~")
+                    else:
+                        st.write(f"- {ingredient}")
+                
+                st.write("**Instructions**")
+                for idx, step in enumerate(recipe["instructions"], start=1):
+                    # Replace mention of substituted items in instructions (Basic string replace)
+                    modified_step = step
+                    for old, new in subs.items():
+                        # Extract just the core name from the original line for better matching
+                        core_old = "".join([i for i in old if not i.isdigit()]).split(',')[0].strip()
+                        modified_step = re.sub(core_old, f"**{new}**", modified_step, flags=re.IGNORECASE)
+                    st.write(f"{idx}. {modified_step}")
+
+            # Original Save/Unsave logic
             if recipe.get("source_url"):
                 st.markdown(f"[Open original recipe]({recipe['source_url']})")
 
-            action_col1, action_col2 = st.columns([1, 4])
-            with action_col1:
-                if logged_in and user_id is not None:
-                    if recipe["id"] in favorite_ids:
-                        if st.button("Unsave", key=f"{key_prefix}_unsave_{recipe['id']}"):
-                            remove_favorite(user_id, recipe["id"])
-                            st.rerun()
-                    else:
-                        if st.button("Save", key=f"{key_prefix}_save_{recipe['id']}"):
-                            add_favorite(user_id, recipe["id"])
-                            st.rerun()
+            if logged_in and user_id is not None:
+                if recipe_id in favorite_ids:
+                    if st.button("Unsave", key=f"{key_prefix}_unsave_{recipe_id}"):
+                        remove_favorite(user_id, recipe_id)
+                        st.rerun()
                 else:
-                    st.caption("Log in to save favorites")
-
-            with st.expander("See full ingredients and steps"):
-                st.write("**Ingredients**")
-                for ingredient in recipe["ingredients"]:
-                    st.write(f"- {ingredient}")
-                st.write("**Instructions**")
-                for idx, step in enumerate(recipe["instructions"], start=1):
-                    st.write(f"{idx}. {step}")
-
+                    if st.button("Save", key=f"{key_prefix}_save_{recipe_id}"):
+                        add_favorite(user_id, recipe_id)
+                        st.rerun()
 
 def ensure_session() -> None:
     if "logged_in" not in st.session_state:
@@ -451,6 +486,30 @@ def ensure_session() -> None:
         st.session_state.user_id = None
     if "username" not in st.session_state:
         st.session_state.username = ""
+    # NEW: Track substitutions per recipe ID
+    if "substitutions" not in st.session_state:
+        st.session_state.substitutions = {}
+
+# --- New Helper Function for Proportions ---
+def apply_substitution(original_line: str, substitute_name: str) -> str:
+    """
+    Attempts to extract the measurement from the original line 
+    and prepend it to the new ingredient name.
+    """
+    # Regex to find numbers/fractions at the start of the string (e.g., "1 1/2", "0.5", "2")
+    match = re.match(r"([0-9\s\/\.\-]+)", original_line)
+    if match:
+        quantity = match.group(1).strip()
+        # Find the first unit from UNITS_AND_NOISE that appears after the quantity
+        words = original_line.lower().split()
+        unit = ""
+        for word in words:
+            if word in UNITS_AND_NOISE and word not in ["a", "an", "the"]:
+                unit = word
+                break
+        return f"**{quantity} {unit} {substitute_name}** (Substituted)"
+    
+    return f"**{substitute_name}** (Substituted)"
 
 
 init_db()
