@@ -296,7 +296,7 @@ def _candidates_from_line(line: str) -> Set[str]:
 
 
 @st.cache_data
-def build__options(recipes: List[Dict]) -> List[str]:
+def build_ingredient_options(recipes: List[Dict]) -> List[str]:
     counts: Dict[str, int] = {}
     for recipe in recipes:
         for line in recipe["s"]:
