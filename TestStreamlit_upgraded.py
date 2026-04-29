@@ -11,7 +11,6 @@ import streamlit as st
 st.set_page_config(page_title="Recipe Finder", page_icon="🍳", layout="wide")
 
 import google.generativeai as genai
-import streamlit as st
 
 # Securely fetch the key from secrets
 try:
@@ -297,7 +296,6 @@ def _candidates_from_line(line: str) -> Set[str]:
             if all(word not in UNITS_AND_NOISE for word in pair.split()):
                 candidates.add(pair)
 
-    # A few cleaner "head " phrases
     if len(tokens) >= 2:
         candidates.add(" ".join(tokens[-2:]))
     candidates.add(tokens[-1])
@@ -317,28 +315,18 @@ def build_ingredient_options(recipes: List[Dict]) -> List[str]:
     return keep[:900]
 
 
-def _manual_s(text: str) -> List[str]:
-    parts = re.split(r"[,\n]", text or "")
-    cleaned = []
-    for part in parts:
-        item = part.strip().lower()
-        if item and item not in cleaned:
-            cleaned.append(item)
-    return cleaned
-
-
 def violates_restrictions(recipe: Dict, restrictions: List[str]) -> bool:
-    _text = " ".join(item.lower() for item in recipe["s"])
+    ingredient_text = " ".join(item.lower() for item in recipe["ingredients"])
     recipe_allergens = {item.lower() for item in recipe.get("allergen_tags", [])}
     recipe_diet_tags = {item.lower() for item in recipe.get("diet_tags", [])}
 
     for restriction in restrictions:
         excluded = set(RESTRICTION_RULES[restriction]["exclude"])
-        if any(word in _text for word in excluded):
+        if any(word in ingredient_text for word in excluded):
             return True
-        if restriction == "Vegetarian" and "vegetarian" not in recipe_diet_tags and any(word in _text for word in excluded):
+        if restriction == "Vegetarian" and "vegetarian" not in recipe_diet_tags and any(word in ingredient_text for word in excluded):
             return True
-        if restriction == "Vegan" and "vegan" not in recipe_diet_tags and any(word in _text for word in excluded):
+        if restriction == "Vegan" and "vegan" not in recipe_diet_tags and any(word in ingredient_text for word in excluded):
             return True
         if restriction == "Gluten-Free" and "gluten" in recipe_allergens:
             return True
@@ -352,17 +340,17 @@ def violates_restrictions(recipe: Dict, restrictions: List[str]) -> bool:
 
 
 def score_recipe(recipe: Dict, available: List[str]) -> Dict:
-    _text = " ".join(item.lower() for item in recipe["s"])
+    ingredient_text = " ".join(item.lower() for item in recipe["ingredients"])
     matched = []
     for item in available:
         item = item.lower().strip()
-        if item and item in _text:
+        if item and item in ingredient_text:
             matched.append(item)
 
     matched = sorted(set(matched))
     missing = []
     score = len(matched)
-    coverage = score / max(len(recipe["s"]), 1)
+    coverage = score / max(len(recipe["ingredients"]), 1)
 
     result = dict(recipe)
     result["matched"] = matched
@@ -403,7 +391,7 @@ def find_recipes(
             continue
         filtered.append(scored)
 
-    if sort_by == "Best  match":
+    if sort_by == "Best ingredient match":
         filtered.sort(key=lambda x: (x["score"], x["coverage"], x.get("rating") or 0, -x["cook_time"]), reverse=True)
     elif sort_by == "Shortest cooking time":
         filtered.sort(key=lambda x: (x["cook_time"], -(x.get("rating") or 0)))
@@ -435,30 +423,26 @@ def render_recipe_card(
             rating_text = f"{recipe['rating']:.1f} / 5" if isinstance(recipe.get("rating"), (int, float)) else "N/A"
             m4.write(f"**Rating:** {rating_text}")
 
-            # --- INSERT NEW AI SECTION HERE ---
             st.markdown("---")
             if st.button(f"✨ Generate AI Insights for {serving_size} servings", key=f"ai_btn_{key_prefix}_{recipe['id']}"):
                 with st.spinner("Gemini is analyzing the kitchen..."):
-                    # This calls the helper function we discussed
                     ai_data = get_ai_recipe_enhancements(recipe, serving_size)
                     
                     if ai_data:
-                        # 1. Display the summary badge
                         st.info(f"**AI Health Note:** {ai_data['ai_summary']}")
                         
-                        # 2. Display the scaled s
-                        with st.expander(f"📍 Scaled s for {serving_size}", expanded=True):
-                            for ing in ai_data['scaled_s']:
+                        with st.expander(f"📍 Scaled ingredients for {serving_size}", expanded=True):
+                            # Corrected key from 'scaled_s' to 'scaled_ingredients'
+                            for ing in ai_data.get('scaled_ingredients', []):
                                 st.write(f"• {ing}")
                     else:
                         st.error("AI could not be reached. Check your API key!")
             st.markdown("---")
-            # ----------------------------------
 
             if recipe["matched"]:
-                st.success(" matches: " + ", ".join(recipe["matched"]))
+                st.success("Ingredient matches: " + ", ".join(recipe["matched"]))
             else:
-                st.info("No exact  matches yet. You can still view the recipe details below.")
+                st.info("No exact ingredient matches yet. You can still view the recipe details below.")
 
             if recipe.get("source_url"):
                 st.markdown(f"[Open original recipe]({recipe['source_url']})")
@@ -513,15 +497,10 @@ def get_ai_recipe_enhancements(recipe, target_servings):
     """
     try:
         response = model.generate_content(prompt)
-        # Clean the response to ensure it's valid JSON
         json_str = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(json_str)
     except Exception as e:
         return None
-
-
-
-
 
 init_db()
 ensure_session()
@@ -546,23 +525,23 @@ with st.sidebar:
     else:
         login_tab, signup_tab = st.tabs(["Log in", "Create account"])
         with login_tab:
-            login_username = st.text_input("Username", key="login_username")
-            login_password = st.text_input("Password", type="password", key="login_password")
+            st.text_input("Username", key="login_username")
+            st.text_input("Password", type="password", key="login_password")
             if st.button("Log in now"):
-                user_id = verify_user(login_username, login_password)
+                user_id = verify_user(st.session_state.login_username, st.session_state.login_password)
                 if user_id is not None:
                     st.session_state.logged_in = True
                     st.session_state.user_id = user_id
-                    st.session_state.username = login_username.strip().lower()
+                    st.session_state.username = st.session_state.login_username.strip().lower()
                     st.success("Logged in successfully.")
                     st.rerun()
                 else:
                     st.error("Incorrect username or password.")
         with signup_tab:
-            new_username = st.text_input("New username", key="new_username")
-            new_password = st.text_input("New password", type="password", key="new_password")
+            st.text_input("New username", key="new_username")
+            st.text_input("New password", type="password", key="new_password")
             if st.button("Create account"):
-                ok, message = create_user(new_username, new_password)
+                ok, message = create_user(st.session_state.new_username, st.session_state.new_password)
                 if ok:
                     st.success(message)
                 else:
