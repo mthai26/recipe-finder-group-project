@@ -229,9 +229,9 @@ def infer_meal_type(recipe: Dict) -> str:
 
 
 def normalize_recipe(recipe: Dict) -> Dict:
-    s = recipe.get("s", []) or []
-    if isinstance(s, str):
-        s = [item.strip() for item in s.split(",") if item.strip()]
+    ingredients = recipe.get("ingredients", []) or []
+    if isinstance(ingredients, str):
+        ingredients = [item.strip() for item in ingredients.split(",") if item.strip()]
 
     instructions = recipe.get("instructions", []) or []
     if isinstance(instructions, str):
@@ -251,7 +251,7 @@ def normalize_recipe(recipe: Dict) -> Dict:
     normalized = {
         "id": str(recipe.get("id", recipe.get("slug", recipe.get("title", "recipe")))),
         "title": recipe.get("title", "Untitled Recipe"),
-        "s": s,
+        "ingredients": ingredients,
         "instructions": instructions,
         "diet_tags": recipe.get("diet_tags", []),
         "allergen_tags": recipe.get("allergen_tags", []),
@@ -572,6 +572,7 @@ with st.sidebar:
     selected_ingredients = st.multiselect(
         "Choose ingredients",
         options=INGREDIENT_OPTIONS,
+        key="main_ingredient_selector",
         help="Start typing a letter such as e and Streamlit will suggest matches like egg, eggplant, or edamame when they exist in the dataset.",
     )
     manual_ingredient_text = st.text_area(
