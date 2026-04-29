@@ -237,10 +237,10 @@ def normalize_recipe(recipe: Dict) -> Dict:
     if isinstance(instructions, str):
         instructions = [item.strip() for item in instructions.split(".") if item.strip()]
 
-    total_minutes = _minutes(recipe.get("cook_time"))
+    total_minutes = parse_minutes(recipe.get("cook_time"))
     if total_minutes is None:
         times = recipe.get("times", {}) or {}
-        total_minutes = _minutes(times.get("total")) or _minutes(times.get("cook")) or _minutes(times.get("prep"))
+        total_minutes = parse_minutes(times.get("total")) or parse_minutes(times.get("cook")) or parse_minutes(times.get("prep"))
 
     difficulty = recipe.get("difficulty")
     if not difficulty:
