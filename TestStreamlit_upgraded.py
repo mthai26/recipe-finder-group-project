@@ -244,7 +244,7 @@ def normalize_recipe(recipe: Dict) -> Dict:
 
     difficulty = recipe.get("difficulty")
     if not difficulty:
-        difficulty = infer_difficulty(total_minutes, len(s), len(instructions))
+        difficulty = infer_difficulty(total_minutes, len(ingredients), len(instructions))
 
     meal_type = recipe.get("meal_type") or infer_meal_type(recipe)
 
