@@ -7,14 +7,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 import streamlit as st
+import google.generativeai as genai
 
 st.set_page_config(page_title="Recipe Finder", page_icon="🍳", layout="wide")
 
-import google.generativeai as genai
-
 # Securely fetch the key from secrets
 try:
-    # This looks for the "GEMINI_API_KEY" you just saved in the dashboard
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-1.5-flash")
@@ -61,13 +59,11 @@ MEAL_TYPE_RULES = {
     "Snack": ["snack", "dip", "cookie", "bar", "smoothie", "dessert"],
 }
 
-
 def get_data_file() -> Path:
     for path in DATA_FILE_CANDIDATES:
         if path.exists():
             return path
     raise FileNotFoundError("No recipe dataset found. Put recipes_for_app.json or recipes.json next to this script.")
-
 
 def init_db() -> None:
     with sqlite3.connect(DB_FILE) as conn:
@@ -93,12 +89,10 @@ def init_db() -> None:
         )
         conn.commit()
 
-
 def hash_password(password: str, salt: Optional[str] = None) -> tuple[str, str]:
     salt = salt or hashlib.sha256(str(Path.cwd()).encode("utf-8") + password.encode("utf-8")).hexdigest()[:32]
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000)
     return digest.hex(), salt
-
 
 def create_user(username: str, password: str) -> tuple[bool, str]:
     username = username.strip().lower()
@@ -119,7 +113,6 @@ def create_user(username: str, password: str) -> tuple[bool, str]:
     except sqlite3.IntegrityError:
         return False, "That username already exists."
 
-
 def verify_user(username: str, password: str) -> Optional[int]:
     username = username.strip().lower()
     with sqlite3.connect(DB_FILE) as conn:
@@ -135,14 +128,12 @@ def verify_user(username: str, password: str) -> Optional[int]:
         return int(user_id)
     return None
 
-
 def get_favorite_ids(user_id: int) -> Set[str]:
     with sqlite3.connect(DB_FILE) as conn:
         rows = conn.execute(
             "SELECT recipe_id FROM favorites WHERE user_id = ?", (user_id,)
         ).fetchall()
     return {str(row[0]) for row in rows}
-
 
 def add_favorite(user_id: int, recipe_id: str) -> None:
     with sqlite3.connect(DB_FILE) as conn:
@@ -152,7 +143,6 @@ def add_favorite(user_id: int, recipe_id: str) -> None:
         )
         conn.commit()
 
-
 def remove_favorite(user_id: int, recipe_id: str) -> None:
     with sqlite3.connect(DB_FILE) as conn:
         conn.execute(
@@ -160,7 +150,6 @@ def remove_favorite(user_id: int, recipe_id: str) -> None:
             (user_id, str(recipe_id)),
         )
         conn.commit()
-
 
 def parse_minutes(value) -> Optional[int]:
     if value is None:
@@ -216,7 +205,6 @@ def infer_difficulty(total_minutes: Optional[int], ingredient_count: int, instru
         return "Medium"
     return "Hard"
 
-
 def infer_meal_type(recipe: Dict) -> str:
     values = " ".join(
         str(v) for v in [recipe.get("title", ""), recipe.get("category", ""), " ".join(recipe.get("tags", []))]
@@ -225,7 +213,6 @@ def infer_meal_type(recipe: Dict) -> str:
         if any(word in values for word in words):
             return meal_type
     return "Dinner"
-
 
 def normalize_recipe(recipe: Dict) -> Dict:
     ingredients = recipe.get("ingredients", []) or []
@@ -265,7 +252,6 @@ def normalize_recipe(recipe: Dict) -> Dict:
     }
     return normalized
 
-
 @st.cache_data
 def load_recipes() -> List[Dict]:
     data_file = get_data_file()
@@ -274,7 +260,6 @@ def load_recipes() -> List[Dict]:
 
     recipes = [normalize_recipe(recipe) for recipe in raw_data]
     return recipes
-
 
 def _candidates_from_line(line: str) -> Set[str]:
     text = line.lower()
@@ -301,7 +286,6 @@ def _candidates_from_line(line: str) -> Set[str]:
     candidates.add(tokens[-1])
     return {c.strip() for c in candidates if c.strip()}
 
-
 @st.cache_data
 def build_ingredient_options(recipes: List[Dict]) -> List[str]:
     counts: Dict[str, int] = {}
@@ -314,8 +298,8 @@ def build_ingredient_options(recipes: List[Dict]) -> List[str]:
     keep.sort(key=lambda item: (-counts[item], item))
     return keep[:900]
 
-
 def violates_restrictions(recipe: Dict, restrictions: List[str]) -> bool:
+    # Changed 's' to 'ingredients'
     ingredient_text = " ".join(item.lower() for item in recipe["ingredients"])
     recipe_allergens = {item.lower() for item in recipe.get("allergen_tags", [])}
     recipe_diet_tags = {item.lower() for item in recipe.get("diet_tags", [])}
@@ -338,8 +322,8 @@ def violates_restrictions(recipe: Dict, restrictions: List[str]) -> bool:
             return True
     return False
 
-
 def score_recipe(recipe: Dict, available: List[str]) -> Dict:
+    # Changed 's' to 'ingredients'
     ingredient_text = " ".join(item.lower() for item in recipe["ingredients"])
     matched = []
     for item in available:
@@ -358,7 +342,6 @@ def score_recipe(recipe: Dict, available: List[str]) -> Dict:
     result["score"] = score
     result["coverage"] = coverage
     return result
-
 
 def find_recipes(
     recipes: List[Dict],
@@ -399,6 +382,28 @@ def find_recipes(
         filtered.sort(key=lambda x: ((x.get("rating") or 0), x["score"], x["coverage"]), reverse=True)
     return filtered
 
+def get_ai_recipe_enhancements(recipe, target_servings):
+    """Uses Gemini to scale ingredients and generate a nutritional summary."""
+    prompt = f"""
+    You are a professional chef and nutritionist. 
+    Original Recipe: {recipe['title']}
+    Original Ingredients: {recipe['ingredients']}
+    
+    Task 1: Scale these ingredients to serve exactly {target_servings} people.
+    Task 2: Provide a 1-sentence nutritional summary (e.g., 'High protein, low calories' or 'Higher than average cholesterol').
+    
+    Return the response in this EXACT JSON format:
+    {{
+        "scaled_ingredients": ["list of strings"],
+        "ai_summary": "string"
+    }}
+    """
+    try:
+        response = model.generate_content(prompt)
+        json_str = response.text.replace('```json', '').replace('```', '').strip()
+        return json.loads(json_str)
+    except Exception as e:
+        return None
 
 def render_recipe_card(
     recipe: Dict,
@@ -431,8 +436,8 @@ def render_recipe_card(
                     if ai_data:
                         st.info(f"**AI Health Note:** {ai_data['ai_summary']}")
                         
+                        # Corrected access key from 'scaled_s' to 'scaled_ingredients'
                         with st.expander(f"📍 Scaled ingredients for {serving_size}", expanded=True):
-                            # Corrected key from 'scaled_s' to 'scaled_ingredients'
                             for ing in ai_data.get('scaled_ingredients', []):
                                 st.write(f"• {ing}")
                     else:
@@ -442,7 +447,7 @@ def render_recipe_card(
             if recipe["matched"]:
                 st.success("Ingredient matches: " + ", ".join(recipe["matched"]))
             else:
-                st.info("No exact ingredient matches yet. You can still view the recipe details below.")
+                st.info("No exact matches yet. You can still view the recipe details below.")
 
             if recipe.get("source_url"):
                 st.markdown(f"[Open original recipe]({recipe['source_url']})")
@@ -468,8 +473,6 @@ def render_recipe_card(
                 st.write("**Instructions**")
                 for idx, step in enumerate(recipe["instructions"], start=1):
                     st.write(f"{idx}. {step}")
-                    
-
 
 def ensure_session() -> None:
     if "logged_in" not in st.session_state:
@@ -478,29 +481,6 @@ def ensure_session() -> None:
         st.session_state.user_id = None
     if "username" not in st.session_state:
         st.session_state.username = ""
-
-def get_ai_recipe_enhancements(recipe, target_servings):
-    """Uses Gemini to scale ingredients and generate a nutritional summary."""
-    prompt = f"""
-    You are a professional chef and nutritionist. 
-    Original Recipe: {recipe['title']}
-    Original Ingredients: {recipe['ingredients']}
-    
-    Task 1: Scale these ingredients to serve exactly {target_servings} people.
-    Task 2: Provide a 1-sentence nutritional summary (e.g., 'High protein, low calories' or 'Higher than average cholesterol').
-    
-    Return the response in this EXACT JSON format:
-    {{
-        "scaled_ingredients": ["list of strings"],
-        "ai_summary": "string"
-    }}
-    """
-    try:
-        response = model.generate_content(prompt)
-        json_str = response.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(json_str)
-    except Exception as e:
-        return None
 
 init_db()
 ensure_session()
