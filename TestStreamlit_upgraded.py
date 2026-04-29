@@ -352,7 +352,7 @@ def violates_restrictions(recipe: Dict, restrictions: List[str]) -> bool:
 
 
 def score_recipe(recipe: Dict, available: List[str]) -> Dict:
-    _text = " ".join(item.lower() for item in recipe["s"])
+    _text = " ".join(item.lower() for item in recipe["ingredients"])
     matched = []
     for item in available:
         item = item.lower().strip()
