@@ -189,6 +189,15 @@ def parse_minutes(value) -> Optional[int]:
 
     return total or None
 
+def parse_manual_ingredients(text: str) -> List[str]:
+    """Cleans the manual text input into a list of individual ingredients."""
+    parts = re.split(r"[,\n]", text or "")
+    cleaned = []
+    for part in parts:
+        item = part.strip().lower()
+        if item and item not in cleaned:
+            cleaned.append(item)
+    return cleaned
 
 def infer_difficulty(total_minutes: Optional[int], ingredient_count: int, instruction_count: int) -> str:
     score = 0
@@ -228,10 +237,10 @@ def normalize_recipe(recipe: Dict) -> Dict:
     if isinstance(instructions, str):
         instructions = [item.strip() for item in instructions.split(".") if item.strip()]
 
-    total_minutes = parse_minutes(recipe.get("cook_time"))
+    total_minutes = _minutes(recipe.get("cook_time"))
     if total_minutes is None:
         times = recipe.get("times", {}) or {}
-        total_minutes = parse_minutes(times.get("total")) or parse_minutes(times.get("cook")) or parse_minutes(times.get("prep"))
+        total_minutes = _minutes(times.get("total")) or _minutes(times.get("cook")) or _minutes(times.get("prep"))
 
     difficulty = recipe.get("difficulty")
     if not difficulty:
@@ -308,7 +317,7 @@ def build_ingredient_options(recipes: List[Dict]) -> List[str]:
     return keep[:900]
 
 
-def parse_manual_s(text: str) -> List[str]:
+def _manual_s(text: str) -> List[str]:
     parts = re.split(r"[,\n]", text or "")
     cleaned = []
     for part in parts:
