@@ -220,9 +220,9 @@ def infer_meal_type(recipe: Dict) -> str:
 
 
 def normalize_recipe(recipe: Dict) -> Dict:
-    ingredients = recipe.get("ingredients", []) or []
-    if isinstance(ingredients, str):
-        ingredients = [item.strip() for item in ingredients.split(",") if item.strip()]
+    s = recipe.get("s", []) or []
+    if isinstance(s, str):
+        s = [item.strip() for item in s.split(",") if item.strip()]
 
     instructions = recipe.get("instructions", []) or []
     if isinstance(instructions, str):
@@ -235,14 +235,14 @@ def normalize_recipe(recipe: Dict) -> Dict:
 
     difficulty = recipe.get("difficulty")
     if not difficulty:
-        difficulty = infer_difficulty(total_minutes, len(ingredients), len(instructions))
+        difficulty = infer_difficulty(total_minutes, len(s), len(instructions))
 
     meal_type = recipe.get("meal_type") or infer_meal_type(recipe)
 
     normalized = {
         "id": str(recipe.get("id", recipe.get("slug", recipe.get("title", "recipe")))),
         "title": recipe.get("title", "Untitled Recipe"),
-        "ingredients": ingredients,
+        "s": s,
         "instructions": instructions,
         "diet_tags": recipe.get("diet_tags", []),
         "allergen_tags": recipe.get("allergen_tags", []),
@@ -268,7 +268,7 @@ def load_recipes() -> List[Dict]:
     return recipes
 
 
-def ingredient_candidates_from_line(line: str) -> Set[str]:
+def _candidates_from_line(line: str) -> Set[str]:
     text = line.lower()
     text = re.sub(r"\([^)]*\)", " ", text)
     text = re.sub(r"\d+[\/\d\.-]*", " ", text)
@@ -288,7 +288,7 @@ def ingredient_candidates_from_line(line: str) -> Set[str]:
             if all(word not in UNITS_AND_NOISE for word in pair.split()):
                 candidates.add(pair)
 
-    # A few cleaner "head ingredient" phrases
+    # A few cleaner "head " phrases
     if len(tokens) >= 2:
         candidates.add(" ".join(tokens[-2:]))
     candidates.add(tokens[-1])
@@ -296,11 +296,11 @@ def ingredient_candidates_from_line(line: str) -> Set[str]:
 
 
 @st.cache_data
-def build_ingredient_options(recipes: List[Dict]) -> List[str]:
+def build__options(recipes: List[Dict]) -> List[str]:
     counts: Dict[str, int] = {}
     for recipe in recipes:
-        for line in recipe["ingredients"]:
-            for candidate in ingredient_candidates_from_line(line):
+        for line in recipe["s"]:
+            for candidate in _candidates_from_line(line):
                 counts[candidate] = counts.get(candidate, 0) + 1
 
     keep = [name for name, count in counts.items() if count >= 2 and len(name) <= 24]
@@ -308,7 +308,7 @@ def build_ingredient_options(recipes: List[Dict]) -> List[str]:
     return keep[:900]
 
 
-def parse_manual_ingredients(text: str) -> List[str]:
+def parse_manual_s(text: str) -> List[str]:
     parts = re.split(r"[,\n]", text or "")
     cleaned = []
     for part in parts:
@@ -319,17 +319,17 @@ def parse_manual_ingredients(text: str) -> List[str]:
 
 
 def violates_restrictions(recipe: Dict, restrictions: List[str]) -> bool:
-    ingredient_text = " ".join(item.lower() for item in recipe["ingredients"])
+    _text = " ".join(item.lower() for item in recipe["s"])
     recipe_allergens = {item.lower() for item in recipe.get("allergen_tags", [])}
     recipe_diet_tags = {item.lower() for item in recipe.get("diet_tags", [])}
 
     for restriction in restrictions:
         excluded = set(RESTRICTION_RULES[restriction]["exclude"])
-        if any(word in ingredient_text for word in excluded):
+        if any(word in _text for word in excluded):
             return True
-        if restriction == "Vegetarian" and "vegetarian" not in recipe_diet_tags and any(word in ingredient_text for word in excluded):
+        if restriction == "Vegetarian" and "vegetarian" not in recipe_diet_tags and any(word in _text for word in excluded):
             return True
-        if restriction == "Vegan" and "vegan" not in recipe_diet_tags and any(word in ingredient_text for word in excluded):
+        if restriction == "Vegan" and "vegan" not in recipe_diet_tags and any(word in _text for word in excluded):
             return True
         if restriction == "Gluten-Free" and "gluten" in recipe_allergens:
             return True
@@ -343,17 +343,17 @@ def violates_restrictions(recipe: Dict, restrictions: List[str]) -> bool:
 
 
 def score_recipe(recipe: Dict, available: List[str]) -> Dict:
-    ingredient_text = " ".join(item.lower() for item in recipe["ingredients"])
+    _text = " ".join(item.lower() for item in recipe["s"])
     matched = []
     for item in available:
         item = item.lower().strip()
-        if item and item in ingredient_text:
+        if item and item in _text:
             matched.append(item)
 
     matched = sorted(set(matched))
     missing = []
     score = len(matched)
-    coverage = score / max(len(recipe["ingredients"]), 1)
+    coverage = score / max(len(recipe["s"]), 1)
 
     result = dict(recipe)
     result["matched"] = matched
@@ -394,7 +394,7 @@ def find_recipes(
             continue
         filtered.append(scored)
 
-    if sort_by == "Best ingredient match":
+    if sort_by == "Best  match":
         filtered.sort(key=lambda x: (x["score"], x["coverage"], x.get("rating") or 0, -x["cook_time"]), reverse=True)
     elif sort_by == "Shortest cooking time":
         filtered.sort(key=lambda x: (x["cook_time"], -(x.get("rating") or 0)))
@@ -437,9 +437,9 @@ def render_recipe_card(
                         # 1. Display the summary badge
                         st.info(f"**AI Health Note:** {ai_data['ai_summary']}")
                         
-                        # 2. Display the scaled ingredients
-                        with st.expander(f"📍 Scaled Ingredients for {serving_size}", expanded=True):
-                            for ing in ai_data['scaled_ingredients']:
+                        # 2. Display the scaled s
+                        with st.expander(f"📍 Scaled s for {serving_size}", expanded=True):
+                            for ing in ai_data['scaled_s']:
                                 st.write(f"• {ing}")
                     else:
                         st.error("AI could not be reached. Check your API key!")
@@ -447,13 +447,9 @@ def render_recipe_card(
             # ----------------------------------
 
             if recipe["matched"]:
-                st.success("Ingredient matches: " + ", ".join(recipe["matched"]))
-            # ... (the rest of your existing code) ...
-
-            if recipe["matched"]:
-                st.success("Ingredient matches: " + ", ".join(recipe["matched"]))
+                st.success(" matches: " + ", ".join(recipe["matched"]))
             else:
-                st.info("No exact ingredient matches yet. You can still view the recipe details below.")
+                st.info("No exact  matches yet. You can still view the recipe details below.")
 
             if recipe.get("source_url"):
                 st.markdown(f"[Open original recipe]({recipe['source_url']})")
