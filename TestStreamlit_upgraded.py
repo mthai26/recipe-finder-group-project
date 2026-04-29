@@ -308,7 +308,7 @@ def _candidates_from_line(line: str) -> Set[str]:
 def build_ingredient_options(recipes: List[Dict]) -> List[str]:
     counts: Dict[str, int] = {}
     for recipe in recipes:
-        for line in recipe["s"]:
+        for line in recipe["ingredients"]:
             for candidate in _candidates_from_line(line):
                 counts[candidate] = counts.get(candidate, 0) + 1
 
