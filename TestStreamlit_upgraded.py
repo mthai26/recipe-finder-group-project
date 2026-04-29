@@ -446,8 +446,8 @@ def render_recipe_card(
                         # 1. Display the summary badge
                         st.info(f"**AI Health Note:** {ai_data['ai_summary']}")
                         
-                        # 2. Display the scaled s
-                        with st.expander(f"Scaled s for {serving_size}", expanded=True):
+                        # 2. Display the scaled ingredientss
+                        with st.expander(f"Scaled ingredients for {serving_size}", expanded=True):
                             for ing in ai_data['scaled_ingredients']:
                                 st.write(f"• {ing}")
                     else:
