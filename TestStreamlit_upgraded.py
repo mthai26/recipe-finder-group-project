@@ -437,7 +437,7 @@ def render_recipe_card(
 
             # --- INSERT NEW AI SECTION HERE ---
             st.markdown("---")
-            if st.button(f"AI Insights for {serving_size} servings", key=f"ai_btn_{key_prefix}_{recipe['id']}"):
+            if st.button(f"Scale for {serving_size} servings", key=f"ai_btn_{key_prefix}_{recipe['id']}"):
                 with st.spinner("Gemini is analyzing the kitchen..."):
                     # This calls the helper function we discussed
                     ai_data = get_ai_recipe_enhancements(recipe, serving_size)
@@ -501,7 +501,6 @@ def get_ai_recipe_enhancements(recipe, target_servings):
         st.error("The AI model isn't initialized. Is your API key correct in secrets?")
         return None
     
-    """Uses Gemini to scale ingredients and generate a nutritional summary."""
     prompt = f"""
     You are a professional chef and nutritionist. 
     Original Recipe: {recipe['title']}
