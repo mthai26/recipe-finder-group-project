@@ -437,7 +437,7 @@ def render_recipe_card(
 
             # --- INSERT NEW AI SECTION HERE ---
             st.markdown("---")
-            if st.button(f"✨ Generate AI Insights for {serving_size} servings", key=f"ai_btn_{key_prefix}_{recipe['id']}"):
+            if st.button(f"AI Insights for {serving_size} servings", key=f"ai_btn_{key_prefix}_{recipe['id']}"):
                 with st.spinner("Gemini is analyzing the kitchen..."):
                     # This calls the helper function we discussed
                     ai_data = get_ai_recipe_enhancements(recipe, serving_size)
@@ -447,7 +447,7 @@ def render_recipe_card(
                         st.info(f"**AI Health Note:** {ai_data['ai_summary']}")
                         
                         # 2. Display the scaled s
-                        with st.expander(f"📍 Scaled s for {serving_size}", expanded=True):
+                        with st.expander(f"Scaled s for {serving_size}", expanded=True):
                             for ing in ai_data['scaled_ingredients']:
                                 st.write(f"• {ing}")
                     else:
