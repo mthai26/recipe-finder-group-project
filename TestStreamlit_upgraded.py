@@ -308,7 +308,7 @@ def _candidates_from_line(line: str) -> Set[str]:
 def build_ingredient_options(recipes: List[Dict]) -> List[str]:
     counts: Dict[str, int] = {}
     for recipe in recipes:
-        for line in recipe["s"]:
+        for line in recipe["ingredients"]:
             for candidate in _candidates_from_line(line):
                 counts[candidate] = counts.get(candidate, 0) + 1
 
@@ -328,7 +328,7 @@ def _manual_s(text: str) -> List[str]:
 
 
 def violates_restrictions(recipe: Dict, restrictions: List[str]) -> bool:
-    _text = " ".join(item.lower() for item in recipe["s"])
+    _text = " ".join(item.lower() for item in recipe["ingredients"])
     recipe_allergens = {item.lower() for item in recipe.get("allergen_tags", [])}
     recipe_diet_tags = {item.lower() for item in recipe.get("diet_tags", [])}
 
@@ -362,7 +362,7 @@ def score_recipe(recipe: Dict, available: List[str]) -> Dict:
     matched = sorted(set(matched))
     missing = []
     score = len(matched)
-    coverage = score / max(len(recipe["s"]), 1)
+    coverage = score / max(len(recipe["ingredients"]), 1)
 
     result = dict(recipe)
     result["matched"] = matched
@@ -448,7 +448,7 @@ def render_recipe_card(
                         
                         # 2. Display the scaled s
                         with st.expander(f"📍 Scaled s for {serving_size}", expanded=True):
-                            for ing in ai_data['scaled_s']:
+                            for ing in ai_data['scaled_ingredients']:
                                 st.write(f"• {ing}")
                     else:
                         st.error("AI could not be reached. Check your API key!")
