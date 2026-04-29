@@ -13,9 +13,9 @@ st.set_page_config(page_title="Recipe Finder", page_icon="🍳", layout="wide")
 import google.generativeai as genai
 import streamlit as st
 
+model = None
 # Securely fetch the key from secrets
 try:
-    # This looks for the "GEMINI_API_KEY" you just saved in the dashboard
     api_key = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel("gemini-1.5-flash")
@@ -496,6 +496,11 @@ def ensure_session() -> None:
         st.session_state.username = ""
 
 def get_ai_recipe_enhancements(recipe, target_servings):
+    # Check if the model was actually initialized
+    if model is None:
+        st.error("The AI model isn't initialized. Is your API key correct in secrets?")
+        return None
+    
     """Uses Gemini to scale ingredients and generate a nutritional summary."""
     prompt = f"""
     You are a professional chef and nutritionist. 
@@ -517,6 +522,7 @@ def get_ai_recipe_enhancements(recipe, target_servings):
         json_str = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(json_str)
     except Exception as e:
+        st.error(f"Gemini API Error: {e}") # This helps you see the REAL error
         return None
 
 
