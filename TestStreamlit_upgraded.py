@@ -355,8 +355,6 @@ def score_recipe(recipe: Dict, available: List[str]) -> Dict:
     score = len(matched)
     coverage = score / max(len(recipe["ingredients"]), 1)
 
-    serving_size = st.sidebar.number_input("Number of people to serve", min_value=1, max_value=20, value=4)
-
     result = dict(recipe)
     result["matched"] = matched
     result["missing"] = missing
@@ -584,6 +582,8 @@ with st.sidebar:
     selected_difficulties = st.multiselect("Difficulty", options=["Easy", "Medium", "Hard"], default=["Easy", "Medium", "Hard"])
     minimum_matches = st.slider("Minimum ingredient matches", min_value=0, max_value=5, value=1, step=1)
     sort_by = st.selectbox("Sort results by", options=["Best ingredient match", "Shortest cooking time", "Highest rating"])
+
+    serving_size = st.number_input("Number of people to serve", min_value=1, max_value=20, value=4)
 
 available_ingredients = sorted(set(selected_ingredients + parse_manual_ingredients(manual_ingredient_text)))
 results = find_recipes(
