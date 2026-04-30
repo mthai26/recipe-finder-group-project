@@ -10,6 +10,18 @@ import streamlit as st
 
 st.set_page_config(page_title="Recipe Finder", page_icon="🍳", layout="wide")
 
+import google.generativeai as genai
+import streamlit as st
+
+model = None
+# Securely fetch the key from secrets
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-2.5-flash")
+except Exception as e:
+    st.error("API Key not found. Please set 'GEMINI_API_KEY' in Streamlit Secrets.")
+
 APP_DIR = Path(__file__).resolve().parent
 DB_FILE = APP_DIR / "recipe_app.db"
 DATA_FILE_CANDIDATES = [
@@ -177,6 +189,15 @@ def parse_minutes(value) -> Optional[int]:
 
     return total or None
 
+def parse_manual_ingredients(text: str) -> List[str]:
+    """Cleans the manual text input into a list of individual ingredients."""
+    parts = re.split(r"[,\n]", text or "")
+    cleaned = []
+    for part in parts:
+        item = part.strip().lower()
+        if item and item not in cleaned:
+            cleaned.append(item)
+    return cleaned
 
 def infer_difficulty(total_minutes: Optional[int], ingredient_count: int, instruction_count: int) -> str:
     score = 0
@@ -256,7 +277,7 @@ def load_recipes() -> List[Dict]:
     return recipes
 
 
-def ingredient_candidates_from_line(line: str) -> Set[str]:
+def _candidates_from_line(line: str) -> Set[str]:
     text = line.lower()
     text = re.sub(r"\([^)]*\)", " ", text)
     text = re.sub(r"\d+[\/\d\.-]*", " ", text)
@@ -276,7 +297,7 @@ def ingredient_candidates_from_line(line: str) -> Set[str]:
             if all(word not in UNITS_AND_NOISE for word in pair.split()):
                 candidates.add(pair)
 
-    # A few cleaner "head ingredient" phrases
+    # A few cleaner "head " phrases
     if len(tokens) >= 2:
         candidates.add(" ".join(tokens[-2:]))
     candidates.add(tokens[-1])
@@ -288,7 +309,7 @@ def build_ingredient_options(recipes: List[Dict]) -> List[str]:
     counts: Dict[str, int] = {}
     for recipe in recipes:
         for line in recipe["ingredients"]:
-            for candidate in ingredient_candidates_from_line(line):
+            for candidate in _candidates_from_line(line):
                 counts[candidate] = counts.get(candidate, 0) + 1
 
     keep = [name for name, count in counts.items() if count >= 2 and len(name) <= 24]
@@ -296,7 +317,7 @@ def build_ingredient_options(recipes: List[Dict]) -> List[str]:
     return keep[:900]
 
 
-def parse_manual_ingredients(text: str) -> List[str]:
+def _manual_s(text: str) -> List[str]:
     parts = re.split(r"[,\n]", text or "")
     cleaned = []
     for part in parts:
@@ -307,17 +328,17 @@ def parse_manual_ingredients(text: str) -> List[str]:
 
 
 def violates_restrictions(recipe: Dict, restrictions: List[str]) -> bool:
-    ingredient_text = " ".join(item.lower() for item in recipe["ingredients"])
+    _text = " ".join(item.lower() for item in recipe["ingredients"])
     recipe_allergens = {item.lower() for item in recipe.get("allergen_tags", [])}
     recipe_diet_tags = {item.lower() for item in recipe.get("diet_tags", [])}
 
     for restriction in restrictions:
         excluded = set(RESTRICTION_RULES[restriction]["exclude"])
-        if any(word in ingredient_text for word in excluded):
+        if any(word in _text for word in excluded):
             return True
-        if restriction == "Vegetarian" and "vegetarian" not in recipe_diet_tags and any(word in ingredient_text for word in excluded):
+        if restriction == "Vegetarian" and "vegetarian" not in recipe_diet_tags and any(word in _text for word in excluded):
             return True
-        if restriction == "Vegan" and "vegan" not in recipe_diet_tags and any(word in ingredient_text for word in excluded):
+        if restriction == "Vegan" and "vegan" not in recipe_diet_tags and any(word in _text for word in excluded):
             return True
         if restriction == "Gluten-Free" and "gluten" in recipe_allergens:
             return True
@@ -331,11 +352,11 @@ def violates_restrictions(recipe: Dict, restrictions: List[str]) -> bool:
 
 
 def score_recipe(recipe: Dict, available: List[str]) -> Dict:
-    ingredient_text = " ".join(item.lower() for item in recipe["ingredients"])
+    _text = " ".join(item.lower() for item in recipe["ingredients"])
     matched = []
     for item in available:
         item = item.lower().strip()
-        if item and item in ingredient_text:
+        if item and item in _text:
             matched.append(item)
 
     matched = sorted(set(matched))
@@ -382,7 +403,7 @@ def find_recipes(
             continue
         filtered.append(scored)
 
-    if sort_by == "Best ingredient match":
+    if sort_by == "Best  match":
         filtered.sort(key=lambda x: (x["score"], x["coverage"], x.get("rating") or 0, -x["cook_time"]), reverse=True)
     elif sort_by == "Shortest cooking time":
         filtered.sort(key=lambda x: (x["cook_time"], -(x.get("rating") or 0)))
@@ -397,8 +418,8 @@ def render_recipe_card(
     logged_in: bool,
     user_id: Optional[int],
     key_prefix: str,
+    serving_size: int,
 ) -> None:
-    recipe_id = recipe["id"]
     with st.container(border=True):
         left, right = st.columns([1.0, 2.0])
 
@@ -414,70 +435,57 @@ def render_recipe_card(
             rating_text = f"{recipe['rating']:.1f} / 5" if isinstance(recipe.get("rating"), (int, float)) else "N/A"
             m4.write(f"**Rating:** {rating_text}")
 
-            if recipe["matched"]:
-                st.success("Ingredient matches: " + ", ".join(recipe["matched"]))
-
-            # --- SUBSTITUTION UI ---
-            with st.expander("🔄 Substitute Ingredients"):
-                sub_col1, sub_col2, sub_col3 = st.columns([2, 2, 1])
-                
-                target = sub_col1.selectbox(
-                    "Replace...", 
-                    options=recipe["ingredients"], 
-                    key=f"target_{key_prefix}_{recipe_id}"
-                )
-                replacement = sub_col2.text_input(
-                    "With...", 
-                    placeholder="e.g. Tofu", 
-                    key=f"rep_{key_prefix}_{recipe_id}"
-                )
-                
-                if sub_col3.button("Swap", key=f"btn_{key_prefix}_{recipe_id}"):
-                    if replacement:
-                        if recipe_id not in st.session_state.substitutions:
-                            st.session_state.substitutions[recipe_id] = {}
-                        st.session_state.substitutions[recipe_id][target] = replacement
-                        st.rerun()
-
-                if recipe_id in st.session_state.substitutions and st.button("Reset Substitutions", key=f"reset_{key_prefix}_{recipe_id}"):
-                    del st.session_state.substitutions[recipe_id]
-                    st.rerun()
-
-            with st.expander("See full ingredients and steps", expanded=True):
-                st.write("**Ingredients**")
-                subs = st.session_state.substitutions.get(recipe_id, {})
-                
-                for ingredient in recipe["ingredients"]:
-                    if ingredient in subs:
-                        # Display the modified ingredient
-                        new_text = apply_substitution(ingredient, subs[ingredient])
-                        st.write(f"- {new_text} ~~*(was {ingredient})*~~")
+            # --- INSERT NEW AI SECTION HERE ---
+            st.markdown("---")
+            if st.button(f"Scale for {serving_size} servings", key=f"ai_btn_{key_prefix}_{recipe['id']}"):
+                with st.spinner("Gemini is analyzing the kitchen..."):
+                    # This calls the helper function we discussed
+                    ai_data = get_ai_recipe_enhancements(recipe, serving_size)
+                    
+                    if ai_data:
+                        # 1. Display the summary badge
+                        st.info(f"**AI Health Note:** {ai_data['ai_summary']}")
+                        
+                        # 2. Display the scaled ingredientss
+                        with st.expander(f"Scaled ingredients for {serving_size}", expanded=True):
+                            for ing in ai_data['scaled_ingredients']:
+                                st.write(f"• {ing}")
                     else:
-                        st.write(f"- {ingredient}")
-                
-                st.write("**Instructions**")
-                for idx, step in enumerate(recipe["instructions"], start=1):
-                    # Replace mention of substituted items in instructions (Basic string replace)
-                    modified_step = step
-                    for old, new in subs.items():
-                        # Extract just the core name from the original line for better matching
-                        core_old = "".join([i for i in old if not i.isdigit()]).split(',')[0].strip()
-                        modified_step = re.sub(core_old, f"**{new}**", modified_step, flags=re.IGNORECASE)
-                    st.write(f"{idx}. {modified_step}")
+                        st.error("AI could not be reached. Check your API key!")
+            st.markdown("---")
+            # ----------------------------------
 
-            # Original Save/Unsave logic
+            if recipe["matched"]:
+                st.success(" matches: " + ", ".join(recipe["matched"]))
+            else:
+                st.info("No exact  matches yet. You can still view the recipe details below.")
+
             if recipe.get("source_url"):
                 st.markdown(f"[Open original recipe]({recipe['source_url']})")
 
-            if logged_in and user_id is not None:
-                if recipe_id in favorite_ids:
-                    if st.button("Unsave", key=f"{key_prefix}_unsave_{recipe_id}"):
-                        remove_favorite(user_id, recipe_id)
-                        st.rerun()
+            action_col1, action_col2 = st.columns([1, 4])
+            with action_col1:
+                if logged_in and user_id is not None:
+                    if recipe["id"] in favorite_ids:
+                        if st.button("Unsave", key=f"{key_prefix}_unsave_{recipe['id']}"):
+                            remove_favorite(user_id, recipe["id"])
+                            st.rerun()
+                    else:
+                        if st.button("Save", key=f"{key_prefix}_save_{recipe['id']}"):
+                            add_favorite(user_id, recipe["id"])
+                            st.rerun()
                 else:
-                    if st.button("Save", key=f"{key_prefix}_save_{recipe_id}"):
-                        add_favorite(user_id, recipe_id)
-                        st.rerun()
+                    st.caption("Log in to save favorites")
+
+            with st.expander("See full ingredients and steps"):
+                st.write("**Ingredients**")
+                for ingredient in recipe["ingredients"]:
+                    st.write(f"- {ingredient}")
+                st.write("**Instructions**")
+                for idx, step in enumerate(recipe["instructions"], start=1):
+                    st.write(f"{idx}. {step}")
+                    
+
 
 def ensure_session() -> None:
     if "logged_in" not in st.session_state:
@@ -486,30 +494,38 @@ def ensure_session() -> None:
         st.session_state.user_id = None
     if "username" not in st.session_state:
         st.session_state.username = ""
-    # NEW: Track substitutions per recipe ID
-    if "substitutions" not in st.session_state:
-        st.session_state.substitutions = {}
 
-# --- New Helper Function for Proportions ---
-def apply_substitution(original_line: str, substitute_name: str) -> str:
-    """
-    Attempts to extract the measurement from the original line 
-    and prepend it to the new ingredient name.
-    """
-    # Regex to find numbers/fractions at the start of the string (e.g., "1 1/2", "0.5", "2")
-    match = re.match(r"([0-9\s\/\.\-]+)", original_line)
-    if match:
-        quantity = match.group(1).strip()
-        # Find the first unit from UNITS_AND_NOISE that appears after the quantity
-        words = original_line.lower().split()
-        unit = ""
-        for word in words:
-            if word in UNITS_AND_NOISE and word not in ["a", "an", "the"]:
-                unit = word
-                break
-        return f"**{quantity} {unit} {substitute_name}** (Substituted)"
+def get_ai_recipe_enhancements(recipe, target_servings):
+    # Check if the model was actually initialized
+    if model is None:
+        st.error("The AI model isn't initialized. Is your API key correct in secrets?")
+        return None
     
-    return f"**{substitute_name}** (Substituted)"
+    prompt = f"""
+    You are a professional chef and nutritionist. 
+    Original Recipe: {recipe['title']}
+    Original Ingredients: {recipe['ingredients']}
+    
+    Task 1: Scale these ingredients to serve exactly {target_servings} people.
+    Task 2: Provide a 1-sentence nutritional summary (e.g., 'High protein, low calories' or 'Higher than average cholesterol').
+    
+    Return the response in this EXACT JSON format:
+    {{
+        "scaled_ingredients": ["list of strings"],
+        "ai_summary": "string"
+    }}
+    """
+    try:
+        response = model.generate_content(prompt)
+        # Clean the response to ensure it's valid JSON
+        json_str = response.text.replace('```json', '').replace('```', '').strip()
+        return json.loads(json_str)
+    except Exception as e:
+        st.error(f"Gemini API Error: {e}") # This helps you see the REAL error
+        return None
+
+
+
 
 
 init_db()
@@ -561,6 +577,7 @@ with st.sidebar:
     selected_ingredients = st.multiselect(
         "Choose ingredients",
         options=INGREDIENT_OPTIONS,
+        key="main_ingredient_selector",
         help="Start typing a letter such as e and Streamlit will suggest matches like egg, eggplant, or edamame when they exist in the dataset.",
     )
     manual_ingredient_text = st.text_area(
@@ -576,6 +593,8 @@ with st.sidebar:
     selected_difficulties = st.multiselect("Difficulty", options=["Easy", "Medium", "Hard"], default=["Easy", "Medium", "Hard"])
     minimum_matches = st.slider("Minimum ingredient matches", min_value=0, max_value=5, value=1, step=1)
     sort_by = st.selectbox("Sort results by", options=["Best ingredient match", "Shortest cooking time", "Highest rating"])
+
+    serving_size = st.number_input("Number of people to serve", min_value=1, max_value=20, value=4)
 
 available_ingredients = sorted(set(selected_ingredients + parse_manual_ingredients(manual_ingredient_text)))
 results = find_recipes(
@@ -621,6 +640,7 @@ with tabs[0]:
                                 st.session_state.logged_in,
                                 st.session_state.user_id,
                                 key_prefix="results",
+                                serving_size=serving_size
                               )
 
 if st.session_state.logged_in:
@@ -637,6 +657,7 @@ if st.session_state.logged_in:
                                     True,
                                     st.session_state.user_id,
                                     key_prefix="favorites",
+                                    serving_size=serving_size
                                 )
 
 st.markdown("---")
