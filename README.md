@@ -11,6 +11,7 @@ The app allows users to:
 - search recipe titles
 - view matching recipes ranked by ingredient overlap
 - see which ingredients they already have and which ones are still missing
+- scale recipe proportions to match desired number of servings
 
 ## Features
 
@@ -22,12 +23,14 @@ The app allows users to:
 - Missing ingredient display
 - Expandable recipe instructions
 - Local dataset for stable demos
+- AI-generated nutritional summaries 
 
 ## Tech Stack
 
 - Python
 - Streamlit
 - JSON dataset storage
+- Gemini 2.5 Flash
 
 ## Project Structure
 
