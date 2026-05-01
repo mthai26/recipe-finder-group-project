@@ -1,8 +1,13 @@
 Group Members:
+
 Kiki Quinn: kvquinn
+
 Victoria Luzniak: valuznia
+
 Hailey Franks: hefranks
+
 Yinqiao Wang: ywang256
+
 Maxime Thai: mthai
 
 
