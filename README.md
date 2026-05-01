@@ -1,3 +1,11 @@
+Group Members:
+Kiki Quinn: kvquinn
+Victoria Luzniak: valuznia
+Hailey Franks: hefranks
+Yinqiao Wang: ywang256
+Maxime Thai: mthai
+
+
 # Recipe Finder Demo App
 A Streamlit-based recipe finder app for a group course project. This app helps users enter ingredients they already have, select food restrictions, and receive recipe suggestions from a curated local recipe dataset.
 
